@@ -1,0 +1,96 @@
+name: Build Noor Islam APK (Release)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Flutter Version Info
+        run: flutter --version
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Generate Localizations
+        run: flutter gen-l10n || echo "No l10n config found, skipping..."
+
+      - name: Analyze Code
+        run: flutter analyze --no-fatal-infos || true
+
+      - name: Build Release APK (split per ABI)
+        run: |
+          flutter build apk \
+            --release \
+            --target-platform android-arm,android-arm64,android-x64 \
+            --split-per-abi
+
+      - name: Build Universal APK
+        run: |
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             build/app/outputs/flutter-apk/noor_islam_universal.apk
+
+      - name: Rename split APKs
+        run: |
+          cd build/app/outputs/flutter-apk/
+          [ -f app-arm64-v8a-release.apk ] && cp app-arm64-v8a-release.apk noor_islam_arm64.apk
+          [ -f app-armeabi-v7a-release.apk ] && cp app-armeabi-v7a-release.apk noor_islam_arm32.apk
+          [ -f app-x86_64-release.apk ] && cp app-x86_64-release.apk noor_islam_x64.apk
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: noor-islam-apks
+          path: |
+            build/app/outputs/flutter-apk/noor_islam_universal.apk
+            build/app/outputs/flutter-apk/noor_islam_arm64.apk
+            build/app/outputs/flutter-apk/noor_islam_arm32.apk
+            build/app/outputs/flutter-apk/noor_islam_x64.apk
+          retention-days: 30
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        with:
+          tag_name: v${{ github.run_number }}
+          name: "Noor Islam v1.0.${{ github.run_number }}"
+          body: |
+            ## Noor Islam APK - Release Build
+            | File | Device |
+            |------|--------|
+            | noor_islam_arm64.apk | Most modern phones (Recommended) |
+            | noor_islam_arm32.apk | Older 32-bit phones |
+            | noor_islam_universal.apk | All devices |
+          files: |
+            build/app/outputs/flutter-apk/noor_islam_universal.apk
+            build/app/outputs/flutter-apk/noor_islam_arm64.apk
+            build/app/outputs/flutter-apk/noor_islam_arm32.apk
+            build/app/outputs/flutter-apk/noor_islam_x64.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
